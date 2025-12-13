@@ -33,8 +33,13 @@
       <input type="checkbox" id="smoker" />
     </div>
     <div>
-      <label>Location</label><br>
-      <input type="text" id="location" />
+      <label>Location/Region</label><br>
+      <select id="location">
+        <option value="northeast">Northeast</option>
+        <option value="southeast">Southeast</option>
+        <option value="southwest">Southwest</option>
+        <option value="northwest">Northwest</option>
+      </select>
     </div>
     <div>
       <label>Number of kids</label><br>
@@ -68,6 +73,12 @@
         bmi: parseFloat(document.getElementById('bmi').value || '0'),
         existingCondition: document.getElementById('existingCondition').value
       };
+
+      // Validate required fields
+      if (!payload.name || payload.age <= 0 || payload.bmi <= 0) {
+        document.getElementById('result').textContent = 'Error: Please fill in all required fields (name, age > 0, BMI > 0)';
+        return;
+      }
 
       document.getElementById('result').textContent = 'Calculating...';
 

@@ -1,0 +1,28 @@
+{
+  "feature_names": [
+    "age",
+    "bmi",
+    "children",
+    "gender_encoded",
+    "smoker_encoded",
+    "region_encoded"
+  ],
+  "metrics": {
+    "train_r2": 0.9939435242344407,
+    "test_r2": 0.9609321300301517,
+    "train_rmse": 237.20460170396984,
+    "test_rmse": 602.0373870290597,
+    "train_mae": 190.8839342051223,
+    "test_mae": 467.19669116374024,
+    "training_samples": 800,
+    "test_samples": 200,
+    "n_estimators": 150,
+    "max_depth": 12,
+    "trained_at": "2025-12-14T01:24:46.726258"
+  },
+  "encoders": [
+    "gender",
+    "smoker",
+    "region"
+  ]
+}
