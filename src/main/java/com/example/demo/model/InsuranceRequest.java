@@ -9,6 +9,7 @@ public class InsuranceRequest {
     private Integer kids;
     private Double bmi;
     private String existingCondition;
+    private String model; // Model selection: random_forest, decision_tree, linear_regression
 
     public InsuranceRequest() {}
 
@@ -35,4 +36,7 @@ public class InsuranceRequest {
 
     public String getExistingCondition() { return existingCondition; }
     public void setExistingCondition(String existingCondition) { this.existingCondition = existingCondition; }
+
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
 }

@@ -10,6 +10,8 @@ Usage:
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -153,68 +155,125 @@ class InsuranceModelTrainer:
         
         return X, y, df
     
-    def train_model(self, X, y, n_estimators=100, max_depth=10, test_size=0.2):
-        """Train Random Forest model"""
-        print(f"\n[*] Training Random Forest model...")
-        print(f"    n_estimators={n_estimators}, max_depth={max_depth}")
+    def train_models(self, X, y, n_estimators=100, max_depth=10, test_size=0.2):
+        """Train multiple models: Random Forest, Decision Tree, and Linear Regression"""
+        print(f"\n[*] Training multiple models...")
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42
         )
         
-        # Train model
-        model = RandomForestRegressor(
+        models = {}
+        all_metrics = {}
+        
+        # 1. Random Forest
+        print(f"\n[1] Training Random Forest...")
+        print(f"    n_estimators={n_estimators}, max_depth={max_depth}")
+        rf_model = RandomForestRegressor(
             n_estimators=n_estimators,
             max_depth=max_depth,
             random_state=42,
-            n_jobs=-1  # Use all CPU cores
+            n_jobs=-1
         )
-        model.fit(X_train, y_train)
+        rf_model.fit(X_train, y_train)
+        rf_train_pred = rf_model.predict(X_train)
+        rf_test_pred = rf_model.predict(X_test)
         
-        # Evaluate
-        train_pred = model.predict(X_train)
-        test_pred = model.predict(X_test)
+        rf_metrics = self._calculate_metrics(
+            y_train, rf_train_pred, y_test, rf_test_pred,
+            len(X_train), len(X_test), n_estimators, max_depth
+        )
+        models['random_forest'] = rf_model
+        all_metrics['random_forest'] = rf_metrics
         
-        train_r2 = r2_score(y_train, train_pred)
-        test_r2 = r2_score(y_test, test_pred)
-        train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
-        test_rmse = np.sqrt(mean_squared_error(y_test, test_pred))
-        train_mae = mean_absolute_error(y_train, train_pred)
-        test_mae = mean_absolute_error(y_test, test_pred)
+        print(f"    Train R²: {rf_metrics['train_r2']:.4f}, Test R²: {rf_metrics['test_r2']:.4f}")
+        print(f"    Test RMSE: ${rf_metrics['test_rmse']:.2f}, Test MAE: ${rf_metrics['test_mae']:.2f}")
         
-        self.metrics = {
-            'train_r2': float(train_r2),
-            'test_r2': float(test_r2),
-            'train_rmse': float(train_rmse),
-            'test_rmse': float(test_rmse),
-            'train_mae': float(train_mae),
-            'test_mae': float(test_mae),
-            'training_samples': len(X_train),
-            'test_samples': len(X_test),
-            'n_estimators': n_estimators,
-            'max_depth': max_depth,
+        # 2. Decision Tree
+        print(f"\n[2] Training Decision Tree...")
+        print(f"    max_depth={max_depth}")
+        dt_model = DecisionTreeRegressor(
+            max_depth=max_depth,
+            random_state=42
+        )
+        dt_model.fit(X_train, y_train)
+        dt_train_pred = dt_model.predict(X_train)
+        dt_test_pred = dt_model.predict(X_test)
+        
+        dt_metrics = self._calculate_metrics(
+            y_train, dt_train_pred, y_test, dt_test_pred,
+            len(X_train), len(X_test), None, max_depth
+        )
+        models['decision_tree'] = dt_model
+        all_metrics['decision_tree'] = dt_metrics
+        
+        print(f"    Train R²: {dt_metrics['train_r2']:.4f}, Test R²: {dt_metrics['test_r2']:.4f}")
+        print(f"    Test RMSE: ${dt_metrics['test_rmse']:.2f}, Test MAE: ${dt_metrics['test_mae']:.2f}")
+        
+        # 3. Linear Regression
+        print(f"\n[3] Training Linear Regression...")
+        lr_model = LinearRegression()
+        lr_model.fit(X_train, y_train)
+        lr_train_pred = lr_model.predict(X_train)
+        lr_test_pred = lr_model.predict(X_test)
+        
+        lr_metrics = self._calculate_metrics(
+            y_train, lr_train_pred, y_test, lr_test_pred,
+            len(X_train), len(X_test), None, None
+        )
+        models['linear_regression'] = lr_model
+        all_metrics['linear_regression'] = lr_metrics
+        
+        print(f"    Train R²: {lr_metrics['train_r2']:.4f}, Test R²: {lr_metrics['test_r2']:.4f}")
+        print(f"    Test RMSE: ${lr_metrics['test_rmse']:.2f}, Test MAE: ${lr_metrics['test_mae']:.2f}")
+        
+        # Print comparison
+        print(f"\n[+] Model Comparison (Test Set):")
+        for model_name, metrics in all_metrics.items():
+            print(f"    {model_name.replace('_', ' ').title()}: R²={metrics['test_r2']:.4f}, RMSE=${metrics['test_rmse']:.2f}")
+        
+        self.metrics = all_metrics
+        return models
+    
+    def _calculate_metrics(self, y_train, train_pred, y_test, test_pred, 
+                          n_train, n_test, n_estimators, max_depth):
+        """Calculate metrics for a model"""
+        metrics = {
+            'train_r2': float(r2_score(y_train, train_pred)),
+            'test_r2': float(r2_score(y_test, test_pred)),
+            'train_rmse': float(np.sqrt(mean_squared_error(y_train, train_pred))),
+            'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred))),
+            'train_mae': float(mean_absolute_error(y_train, train_pred)),
+            'test_mae': float(mean_absolute_error(y_test, test_pred)),
+            'training_samples': n_train,
+            'test_samples': n_test,
             'trained_at': datetime.now().isoformat()
         }
-        
-        print(f"\n[+] Model Performance:")
-        print(f"    Train R²:  {train_r2:.4f}")
-        print(f"    Test R²:   {test_r2:.4f}")
-        print(f"    Train RMSE: ${train_rmse:.2f}")
-        print(f"    Test RMSE:  ${test_rmse:.2f}")
-        print(f"    Train MAE:  ${train_mae:.2f}")
-        print(f"    Test MAE:   ${test_mae:.2f}")
-        
-        return model, train_r2, test_r2
+        if n_estimators is not None:
+            metrics['n_estimators'] = n_estimators
+        if max_depth is not None:
+            metrics['max_depth'] = max_depth
+        return metrics
     
-    def save_model(self, model):
-        """Save model and encoders to pickle files"""
-        print(f"\n[*] Saving model and encoders...")
+    def save_models(self, models):
+        """Save all models and encoders to pickle files"""
+        print(f"\n[*] Saving models and encoders...")
         
-        # Save model
-        model_path = os.path.join(self.model_dir, 'insurance_model.pkl')
-        joblib.dump(model, model_path)
-        print(f"[+] Model saved: {model_path}")
+        # Save Random Forest (default for backward compatibility)
+        rf_path = os.path.join(self.model_dir, 'insurance_model.pkl')
+        joblib.dump(models['random_forest'], rf_path)
+        print(f"[+] Random Forest saved: {rf_path}")
+        
+        # Save Decision Tree
+        dt_path = os.path.join(self.model_dir, 'insurance_model_decision_tree.pkl')
+        joblib.dump(models['decision_tree'], dt_path)
+        print(f"[+] Decision Tree saved: {dt_path}")
+        
+        # Save Linear Regression
+        lr_path = os.path.join(self.model_dir, 'insurance_model_linear_regression.pkl')
+        joblib.dump(models['linear_regression'], lr_path)
+        print(f"[+] Linear Regression saved: {lr_path}")
         
         # Save encoders
         for col, encoder in self.encoders.items():
@@ -222,9 +281,11 @@ class InsuranceModelTrainer:
             joblib.dump(encoder, encoder_path)
             print(f"[+] Encoder saved: {encoder_path}")
         
-        # Save feature names
+        # Save feature names and configuration
         config_path = os.path.join(self.model_dir, 'model_config.json')
         config = {
+            'models': ['random_forest', 'decision_tree', 'linear_regression'],
+            'default_model': 'random_forest',
             'feature_names': self.feature_names,
             'metrics': self.metrics,
             'encoders': list(self.encoders.keys())
@@ -233,7 +294,7 @@ class InsuranceModelTrainer:
             json.dump(config, f, indent=2)
         print(f"[+] Config saved: {config_path}")
         
-        return model_path
+        return rf_path
     
     def train(self, source='synthetic', dataset_id=None, n_samples=500, n_estimators=100, max_depth=10):
         """Complete training pipeline"""
@@ -251,11 +312,11 @@ class InsuranceModelTrainer:
             # Preprocess
             X, y, df_processed = self.preprocess_data(df)
             
-            # Train
-            model, train_r2, test_r2 = self.train_model(X, y, n_estimators, max_depth)
+            # Train all models
+            models = self.train_models(X, y, n_estimators, max_depth)
             
-            # Save
-            model_path = self.save_model(model)
+            # Save all models
+            model_path = self.save_models(models)
             
             print(f"\n[+] Training completed successfully!")
             print(f"{'='*60}\n")

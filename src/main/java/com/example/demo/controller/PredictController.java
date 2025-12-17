@@ -5,6 +5,7 @@ import com.example.demo.model.InsuranceResponse;
 import com.example.demo.service.MLPredictionService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -32,19 +33,29 @@ public class PredictController {
             return new InsuranceResponse("Error: Location is required");
         }
 
-        // Get ML model prediction
-        double predictedCost = mlPredictionService.predictInsuranceCost(
+        // Get ML model prediction with selected model
+        String selectedModel = req.getModel();
+        if (selectedModel == null || selectedModel.trim().isEmpty()) {
+            selectedModel = "random_forest"; // Default model
+        }
+        
+        Map<String, Object> predictionResult = mlPredictionService.predictInsuranceCost(
                 req.getAge(),
                 req.getGender(),
                 req.getBmi(),
                 req.getKids() != null ? req.getKids() : 0,
                 req.getSmoker() != null ? req.getSmoker() : false,
-                req.getLocation()
+                req.getLocation(),
+                selectedModel
         );
+        
+        String usedModel = (String) predictionResult.get("model");
+        double predictedCost = ((Number) predictionResult.get("prediction")).doubleValue();
 
         // Generate a friendly response with suggestions
         StringBuilder response = new StringBuilder();
         response.append("=== Insurance Cost Estimate ===\n");
+        response.append(String.format("Model Used: %s\n", usedModel.replace("_", " ").toUpperCase()));
         response.append(String.format("Estimated Annual Cost: $%.2f\n\n", predictedCost));
         
         response.append("=== Personalized Suggestions to Reduce Cost ===\n");

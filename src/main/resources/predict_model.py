@@ -4,7 +4,9 @@ Called from Java via subprocess with command-line arguments.
 Dynamically loads feature names and encoders from model config.
 
 Usage:
-  python predict_model.py <age> <gender> <bmi> <kids> <smoker> <location>
+  python predict_model.py <age> <gender> <bmi> <kids> <smoker> <location> [--model <model_name>]
+  
+Model options: random_forest, decision_tree, linear_regression
 """
 
 import sys
@@ -19,6 +21,17 @@ def main():
         sys.exit(1)
 
     model_dir = 'src/main/resources/models'
+    selected_model = 'random_forest'  # Default model
+    
+    # Check if --model argument is provided
+    args = sys.argv[1:]
+    if '--model' in args:
+        model_idx = args.index('--model')
+        if model_idx + 1 < len(args):
+            selected_model = args[model_idx + 1]
+            # Remove --model and its value from args
+            args = args[:model_idx] + args[model_idx + 2:]
+            sys.argv = [sys.argv[0]] + args
     
     try:
         # Load model configuration
@@ -32,9 +45,31 @@ def main():
         
         feature_names = config.get('feature_names', [])
         encoders_list = config.get('encoders', [])
+        available_models = config.get('models', ['random_forest'])
         
-        # Load model
-        model = joblib.load(os.path.join(model_dir, 'insurance_model.pkl'))
+        # Validate selected model
+        if selected_model not in available_models:
+            print(f"Error: Invalid model '{selected_model}'. Available models: {available_models}", file=sys.stderr)
+            sys.exit(1)
+        
+        # Load the selected model
+        model_files = {
+            'random_forest': 'insurance_model.pkl',
+            'decision_tree': 'insurance_model_decision_tree.pkl',
+            'linear_regression': 'insurance_model_linear_regression.pkl'
+        }
+        
+        model_file = model_files.get(selected_model)
+        if not model_file:
+            print(f"Error: Model file not found for '{selected_model}'", file=sys.stderr)
+            sys.exit(1)
+        
+        model_path = os.path.join(model_dir, model_file)
+        if not os.path.exists(model_path):
+            print(f"Error: Model file '{model_path}' does not exist. Train the model first.", file=sys.stderr)
+            sys.exit(1)
+        
+        model = joblib.load(model_path)
         
         # Load encoders
         encoders = {}
@@ -46,9 +81,11 @@ def main():
         # Parse input arguments into a dict
         # Format: key1=value1 key2=value2 ... or positional args
         input_dict = {}
-        if len(sys.argv) > 1 and '=' in sys.argv[1]:
+        positional_args = [arg for arg in sys.argv[1:] if not arg.startswith('--') and sys.argv[sys.argv.index(arg) - 1] != '--model']
+        
+        if len(positional_args) > 0 and '=' in positional_args[0]:
             # JSON or key=value format
-            for arg in sys.argv[1:]:
+            for arg in positional_args:
                 if '=' in arg:
                     key, value = arg.split('=', 1)
                     # Normalize boolean values
@@ -58,21 +95,24 @@ def main():
                         input_dict[key] = value
         else:
             # Positional arguments (legacy format)
-            if len(sys.argv) != 7:
-                print("Error: Expected 6 positional arguments or key=value pairs", file=sys.stderr)
+            if len(positional_args) != 6:
+                print(f"Error: Expected 6 positional arguments, got {len(positional_args)}. Args: {positional_args}", file=sys.stderr)
                 sys.exit(1)
-            smoker_val = sys.argv[5].lower()
+            smoker_val = positional_args[4].lower()
             if smoker_val in ('true', '1', 'yes'):
                 smoker_val = 'yes'
             elif smoker_val in ('false', '0', 'no'):
                 smoker_val = 'no'
+            # Accept location as region (since Python script calls it location in Java)
+            location_val = positional_args[5]
             input_dict = {
-                'age': sys.argv[1],
-                'gender': sys.argv[2],
-                'bmi': sys.argv[3],
-                'children': sys.argv[4],
+                'age': positional_args[0],
+                'gender': positional_args[1],
+                'bmi': positional_args[2],
+                'children': positional_args[3],
                 'smoker': smoker_val,
-                'region': sys.argv[6]
+                'region': location_val,
+                'location': location_val  # Add as both for compatibility
             }
         
         # Build feature vector based on config
@@ -110,6 +150,12 @@ def main():
                     value = input_dict[feature]
                 elif feature == 'children' and 'kids' in input_dict:
                     value = input_dict['kids']
+                elif feature == 'kids' and 'children' in input_dict:
+                    value = input_dict['children']
+                elif feature == 'smoker_int' and 'smoker' in input_dict:
+                    # Convert yes/no to 1/0
+                    smoker_val = input_dict['smoker']
+                    value = 1 if smoker_val in ('yes', '1', 'true', True) else 0
                 
                 if value is not None:
                     try:
@@ -117,7 +163,9 @@ def main():
                     except ValueError:
                         print(f"Error: Invalid numeric value for '{feature}': {value}", file=sys.stderr)
                         sys.exit(1)
-        
+                else:
+                    print(f"Error: Missing value for numeric feature '{feature}'. Available keys: {list(input_dict.keys())}", file=sys.stderr)
+                    sys.exit(1)
         
         # Make prediction
         if not features:
@@ -127,8 +175,12 @@ def main():
         features_array = np.array([features])
         prediction = model.predict(features_array)[0]
         
-        # Output only the numeric prediction (so Java can easily parse it)
-        print(f"{prediction:.2f}")
+        # Output prediction with model name in JSON format for easier parsing
+        output = {
+            'model': selected_model,
+            'prediction': float(prediction)
+        }
+        print(json.dumps(output))
         
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

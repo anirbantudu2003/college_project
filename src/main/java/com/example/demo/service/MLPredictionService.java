@@ -24,9 +24,10 @@ public class MLPredictionService {
      * @param kids number of kids
      * @param smoker whether the person is a smoker
      * @param location location (e.g., northeast, southeast, southwest, northwest)
-     * @return predicted insurance cost in USD
+     * @param modelName model to use (random_forest, decision_tree, linear_regression). If null, uses default.
+     * @return map containing model name and predicted cost
      */
-    public double predictInsuranceCost(int age, String gender, double bmi, int kids, boolean smoker, String location) {
+    public Map<String, Object> predictInsuranceCost(int age, String gender, double bmi, int kids, boolean smoker, String location, String modelName) {
         try {
             // Convert boolean smoker to yes/no (model was trained with these values)
             String smokerStr = smoker ? "yes" : "no";
@@ -36,16 +37,34 @@ public class MLPredictionService {
             
             // Build the Python command with arguments
             String pythonExecutable = getPythonExecutable();
-            ProcessBuilder pb = new ProcessBuilder(
-                    pythonExecutable,
-                    PYTHON_SCRIPT_PATH,
-                    String.valueOf(age),
-                    gender.toLowerCase(),
-                    String.valueOf(bmi),
-                    String.valueOf(kids),
-                    smokerStr,
-                    location
-            );
+            ProcessBuilder pb;
+            
+            // If model is specified, add --model argument
+            if (modelName != null && !modelName.trim().isEmpty()) {
+                pb = new ProcessBuilder(
+                        pythonExecutable,
+                        PYTHON_SCRIPT_PATH,
+                        String.valueOf(age),
+                        gender.toLowerCase(),
+                        String.valueOf(bmi),
+                        String.valueOf(kids),
+                        smokerStr,
+                        location,
+                        "--model",
+                        modelName
+                );
+            } else {
+                pb = new ProcessBuilder(
+                        pythonExecutable,
+                        PYTHON_SCRIPT_PATH,
+                        String.valueOf(age),
+                        gender.toLowerCase(),
+                        String.valueOf(bmi),
+                        String.valueOf(kids),
+                        smokerStr,
+                        location
+                );
+            }
 
             // Set working directory to project root so Python script can find models/
             pb.directory(new File(System.getProperty("user.dir")));
@@ -77,30 +96,60 @@ public class MLPredictionService {
                 String allOutput = "Exit code: " + exitCode + "\nStdout: " + output + "\nStderr: " + errorOutput;
                 System.err.println("[ML Service] Python script output: " + allOutput);
                 if (exitCode != 0) {
-                    return 0.0;
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("model", modelName != null ? modelName : "unknown");
+                    errorMap.put("prediction", 0.0);
+                    return errorMap;
                 }
             }
 
-            // Parse the prediction from Python output
+            // Parse the prediction from Python output (now in JSON format)
             String result = output.toString().trim();
             
             if (result.isEmpty()) {
                 System.err.println("[ML Service] Empty prediction output. Full output: " + output + " | Error: " + errorOutput);
-                return 0.0;
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("model", modelName != null ? modelName : "unknown");
+                errorMap.put("prediction", 0.0);
+                return errorMap;
             }
             
             try {
-                double prediction = Double.parseDouble(result);
-                System.out.println("[ML Service] Successfully predicted: $" + prediction + " for age=" + age + ", gender=" + gender + ", bmi=" + bmi + ", kids=" + kids + ", smoker=" + smokerStr + ", location=" + location);
-                return prediction;
-            } catch (NumberFormatException e) {
-                System.err.println("[ML Service] Failed to parse prediction: '" + result + "' | Error: " + e.getMessage());
-                return 0.0;
+                // Try to parse as JSON first
+                Map<String, Object> jsonResult = objectMapper.readValue(result, Map.class);
+                double prediction = ((Number) jsonResult.get("prediction")).doubleValue();
+                String usedModel = (String) jsonResult.getOrDefault("model", modelName != null ? modelName : "random_forest");
+                
+                System.out.println("[ML Service] Successfully predicted: $" + prediction + " using " + usedModel + " for age=" + age + ", gender=" + gender + ", bmi=" + bmi + ", kids=" + kids + ", smoker=" + smokerStr + ", location=" + location);
+                
+                Map<String, Object> responseMap = new HashMap<>();
+                responseMap.put("model", usedModel);
+                responseMap.put("prediction", prediction);
+                return responseMap;
+            } catch (Exception jsonEx) {
+                // Fallback: try to parse as plain number (for backward compatibility)
+                try {
+                    double prediction = Double.parseDouble(result);
+                    System.out.println("[ML Service] Successfully predicted (legacy format): $" + prediction);
+                    Map<String, Object> responseMap = new HashMap<>();
+                    responseMap.put("model", modelName != null ? modelName : "random_forest");
+                    responseMap.put("prediction", prediction);
+                    return responseMap;
+                } catch (NumberFormatException e) {
+                    System.err.println("[ML Service] Failed to parse prediction: '" + result + "' | Error: " + e.getMessage());
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("model", modelName != null ? modelName : "unknown");
+                    errorMap.put("prediction", 0.0);
+                    return errorMap;
+                }
             }
         } catch (Exception e) {
             System.err.println("[ML Service] Error calling ML model: " + e.getMessage());
             e.printStackTrace();
-            return 0.0;
+            Map<String, Object> errorMap = new HashMap<>();
+            errorMap.put("model", modelName != null ? modelName : "unknown");
+            errorMap.put("prediction", 0.0);
+            return errorMap;
         }
     }
 

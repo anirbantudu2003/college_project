@@ -162,6 +162,15 @@
     </div>
 
     <div class="field">
+      <label>Prediction Model</label>
+      <select id="model">
+        <option value="random_forest">Random Forest (Default)</option>
+        <option value="decision_tree">Decision Tree</option>
+        <option value="linear_regression">Linear Regression</option>
+      </select>
+    </div>
+
+    <div class="field">
       <label>Smoker</label>
       <div class="radio-row">
         <label>
@@ -222,7 +231,8 @@
       location: document.getElementById('location').value,
       kids: parseInt(document.getElementById('kids').value || '0'),
       bmi: parseFloat(document.getElementById('bmi').value || '0'),
-      existingCondition: document.getElementById('existingCondition').value
+      existingCondition: document.getElementById('existingCondition').value,
+      model: document.getElementById('model').value
     };
 
     if (!payload.name || payload.age <= 0 || payload.bmi <= 0) {
